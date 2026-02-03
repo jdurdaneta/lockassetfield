@@ -227,6 +227,11 @@ function plugin_lockassetfield_post_show_item($params)
     $item = $params['item'];
     $itemtype = $item->getType();
 
+    // Verificamos si es crear un equipo o editar
+    if (!isset($item->fields['id']) || $item->fields['id'] < 1) {
+        return true;
+    }
+
     if (!ConfigField::existInConfigField($itemtype)) {
         return true;
     }
