@@ -29,7 +29,7 @@
  */
 
 // Versión del plugin y rango de versiones de GLPI soportadas.
-define('PLUGIN_LOCKASSETFIELD_VERSION', '1.0.0');
+define('PLUGIN_LOCKASSETFIELD_VERSION', '1.0.1');
 define('PLUGIN_LOCKASSETFIELD_MIN_GLPI', '10.0.0');
 define('PLUGIN_LOCKASSETFIELD_MAX_GLPI', '10.0.99');
 
