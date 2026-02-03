@@ -1,0 +1,114 @@
+{#
+ # -------------------------------------------------------------------------
+ # GenInventoryNumber plugin for GLPI
+ # -------------------------------------------------------------------------
+ #
+ # LICENSE
+ #
+ # This file is part of LockAssetField.
+ #
+ # LockAssetField is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # LockAssetField is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with LockAssetField. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @copyright Copyright (C) 2008-2022 by LockAssetField plugin team.
+ # @license   GPLv3 https://www.gnu.org/licenses/gpl-3.0.html
+ # @link      https://github.com/pluginsGLPI/lockassetfield
+ # -------------------------------------------------------------------------
+ #}
+
+{# 
+  Plantilla principal de formulario de configuración del plugin LockAssetField.
+
+  - Extiende el layout estándar de GLPI para formularios: generic_show_form.html.twig
+  - Utiliza los macros de campos de formulario (fields_macros) para generar:
+      * Campo de solo lectura "name"
+      * Selector Sí/No "is_active"
+      * Área de texto "comment"
+  - Muestra un botón que abre un modal Bootstrap con información general del plugin
+    (contenido en la variable 'info_text' enviada desde PHP).
+#}
+{% extends "generic_show_form.html.twig" %}
+{% import 'components/form/fields_macros.html.twig' as fields %}
+
+{# 
+  Bloque que define los campos específicos del formulario para este objeto.
+  Se inserta en la zona prevista en generic_show_form.html.twig.
+#}
+{% block form_fields %}
+
+    {# Campo de solo lectura con el nombre de la configuración (no editable desde UI) #}
+    {{ fields.readOnlyField(
+        'name',
+        item.fields['name'],
+        __('Field'),
+    ) }}
+    {{ fields.nullField() }}
+
+    {# Selector Sí/No para activar o desactivar la funcionalidad del plugin.
+       El estado de readonly depende de params.canedit, calculado en PHP. #}
+    {{ fields.dropdownYesNo(
+        'is_active',
+        item.fields['is_active'],
+        __('Active'),
+        {'readonly': not params.canedit}
+    ) }}
+    {{ fields.nullField() }}
+
+    {# Área de texto para comentarios sobre la configuración.
+       Se deshabilita si el usuario no tiene permiso de edición. #}
+    {{ fields.textareaField(
+        'comment',
+        item.fields['comment'],
+        __('Comments'),
+        {'disabled': not params.canedit}
+    ) }}
+    {{ fields.nullField() }}
+    
+    {# Botón que abre un modal informativo con descripción general del plugin. #}
+    <div class="my-3 col-6 text-end px-3">
+    <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#pluginInfoModal">
+        <i class="fa fa-info-circle me-2"></i> Información general del plugin
+    </button>
+</div>
+
+{# 
+  Modal Bootstrap con información general del plugin:
+  - Título con icono.
+  - Cuerpo que muestra 'info_text' en HTML (se usa |raw porque viene ya preparado).
+  - Botón de cierre estándar.
+#}
+<!-- Modal -->
+<div class="modal fade" id="pluginInfoModal" tabindex="-1" aria-labelledby="pluginInfoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title" id="pluginInfoModalLabel">
+            <i class="fas fa-info-circle me-2"></i>Información general del plugin
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body" style="font-size:14px; line-height:1.6;">
+        {{ info_text|raw }}
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{% endblock %}

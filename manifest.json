@@ -1,0 +1,37 @@
+{
+  "name": "lockassetfield",
+  "display_name": "Lock Asset Field",
+  "key": "lockassetfield",
+  "license": "GPLv2+",
+  "version": "1.0.0",
+  "author": "Equipo INTEF",
+  "homepage": "https://github.com/jdurdaneta/glpi-lockassetfield",
+  "minGlpiVersion": "10.0.0",
+  "maxGlpiVersion": "10.0.99",
+  "requirements": {
+    "php": ">=8.0"
+  },
+  "srcDir": "src/",
+  "autoload": {
+    "psr-4": {
+      "GlpiPlugin\\\\Lockassetfield\\\\": "src/"
+    }
+  },
+  "plugin": {
+    "name": "LockAssetField",
+    "classname": "PluginLockassetfield"
+  },
+  "extra": {
+    "description": {
+      "en_GB": "Lock sensitive asset fields (serial, inventory number, manufacturer, model, type, state) and enforce edit restrictions.",
+      "es_ES": "Bloqueo de campos sensibles de activos (número de serie, inventario, fabricante, modelo, tipo, estado) y control de edición."
+    },
+    "tags": [
+      "inventory",
+      "assets",
+      "fields",
+      "lock",
+      "restrictions"
+    ]
+  }
+}
