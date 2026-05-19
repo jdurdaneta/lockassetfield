@@ -30,7 +30,7 @@
 
 use GlpiPlugin\Lockassetfield\Config;
 
-include ('../../../inc/includes.php');
+include('../../../inc/includes.php');
 
 // Validación de derechos de acceso a la configuración del plugin.
 // Solo los usuarios con el derecho READ asociado a Config::$rightname
@@ -40,7 +40,7 @@ Session::checkRight(Config::$rightname, READ);
 // Instancia del modelo principal del plugin (configuración global).
 // Se carga el registro con id = 1, que actúa como configuración única.
 $config = new Config();
-$config->getFromDB(1); // Se toma el primero pero no sus 
+$config->getFromDB(1); // Se toma el primero pero no sus
 
 // Cabecera estándar de GLPI para la sección de configuración del plugin.
 // Define:

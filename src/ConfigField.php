@@ -16,7 +16,7 @@
  *
  * LockAssetField is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -30,286 +30,334 @@
 
 namespace GlpiPlugin\Lockassetfield;
 
-use Html;
-use Session;
-use Dropdown;
 use CommonDBTM;
-use GlpiPlugin\Lockassetfield\Config;
+use Dropdown;
+use Html;
 
 if (!defined('GLPI_ROOT')) {
     die("Sorry. You can't access this file directly");
 }
 
 /**
- * Clase ConfigField
- *
- * Representa la configuración de bloqueo de campos por tipo de activo.
- *
- * Responsabilidades principales:
- *  - Mantener en base de datos, por `itemtype`, qué campos pueden estar bloqueados
- *    (número de serie, inventario, fabricante, modelo, tipo, estado, etc.).
- *  - Proporcionar matrices de configuración para la interfaz (configuración de campos
- *    y configuración de bloqueo por estado).
- *  - Resolver, para un `itemtype` concreto, qué campos deben bloquearse en los hooks.
+ * Configuración de campos bloqueados por tipo de activo.
  */
 class ConfigField extends CommonDBTM
 {
-    /** @var string Nombre del derecho de acceso principal para este objeto */
+    /**
+     * Derecho principal asociado a este objeto.
+     *
+     * @var string
+     */
     public static $rightname = 'plugin_lockassetfield_config';
 
-    /** @var string Nombre de la tabla de configuración de campos bloqueados */
+    /**
+     * Habilita histórico de cambios en la configuración de campos.
+     *
+     * @var bool
+     */
+    public $dohistory = true;
+
+    /**
+     * Tabla de configuración.
+     *
+     * @var string
+     */
     private static $table = 'glpi_plugin_lockassetfield_configfields';
 
     /**
-     * Devuelve el nombre localizado del tipo actual.
+     * Devuelve el nombre localizado del tipo.
      *
-     * Este nombre se utiliza en la interfaz (búsquedas, pestañas, etc.),
-     * aunque esta clase se orienta principalmente a la configuración.
+     * @param int $nb Número de elementos.
      *
-     * @param int $nb Número de elementos (no se utiliza en este caso).
-     *
-     * @return string Nombre localizado del tipo.
+     * @return string
      */
-    public static function getTypeName($nb = 0)
+    public static function getTypeName($nb = 0): string
     {
         return __('Bloqueo de campos', 'lockassetfield');
     }
 
     /**
-     * Obtiene los tipos de activos soportados y, opcionalmente,
-     * sus campos bloqueables.
+     * Sincroniza la tabla de configuración con los tipos soportados en GLPI 11.
      *
-     * Cuando `$fields` es:
-     *  - `null`       → devuelve un array plano con los itemtypes.
-     *  - `'lockfields'` → devuelve las filas completas con los campos
-     *                     *_locked para construir matrices de configuración.
+     * - Inserta los tipos estándar que no existan aún.
+     * - Mantiene los activos personalizados seleccionados desde Gestión de objetos.
+     * - Elimina solo registros obsoletos que NO sean activos personalizados GLPI 11.
+     * - Migra itemtypes heredados de GenericObject a custom assets del core.
      *
-     * Si el `itemtype` no existe como clase en GLPI y tampoco está en la lista
-     * de tipos nativos soportados por el plugin (`Config::lockAssetFieldType()`),
-     * se elimina su registro de la tabla de configuración.
-     *
-     * @param string|null $fields Modo de retorno: null (solo itemtypes) o 'lockfields'.
-     *
-     * @return array Lista de itemtypes o filas completas según el modo.
+     * @return void
      */
-    public static function getSupportedAssetTypes($fields = null)
+    public static function syncSupportedAssetTypes(): void
     {
         global $DB;
 
-        $res = [];
-        $iterator = $DB->request([
-            'SELECT' => ['itemtype', 'serial_locked', 'otherserial_locked', 'manufacturers_id_locked', 'models_id_locked', 'types_id_locked'],
-            'FROM'   => self::$table,
-            'ORDER'  => 'id ASC'
-        ]);
+        self::migrateLegacyGenericObjectItemtypes();
 
-        foreach ($iterator as $row) {
-            if (!class_exists($row['itemtype'])) {
-                // Verificamos si no es un activo nativo de GLPI; si no lo es, lo eliminamos de nuestra tabla
-                if (!in_array($row['itemtype'], Config::lockAssetFieldType())) {
-                    $DB->delete(
-                        self::$table,
-                        ['itemtype' => $row['itemtype']]
-                    );
-                }
-            } else {
-                if ($fields === 'lockfields') {
-                    $res[] = $row;
-                } else {
-                    $res[] = $row['itemtype'];
-                }
+        $table = getTableForItemType(__CLASS__);
+
+        $standardTypes = Config::lockAssetFieldType();
+        $customTypes = ConfigAssetObject::getAvailableCustomAssetItemtypes();
+
+        $allowedTypes = array_values(
+            array_unique(
+                array_merge(
+                    $standardTypes,
+                    $customTypes
+                )
+            )
+        );
+
+        foreach ($standardTypes as $itemtype) {
+            if (!countElementsInTable($table, ['itemtype' => $itemtype])) {
+                $field = new self();
+                $field->add([
+                    'plugin_lockassetfield_configs_id' => 1,
+                    'itemtype'                         => $itemtype,
+                ]);
             }
         }
-        return $res;
+
+        foreach (
+            $DB->request(
+                [
+                    'SELECT' => ['id', 'itemtype'],
+                    'FROM'   => $table,
+                ]
+            ) as $row
+        ) {
+            $itemtype = (string) $row['itemtype'];
+
+            if (
+                !in_array($itemtype, $allowedTypes, true)
+                && !str_starts_with($itemtype, 'Glpi\\CustomAsset\\')
+            ) {
+                $DB->delete(
+                    $table,
+                    [
+                        'id' => $row['id'],
+                    ]
+                );
+            }
+        }
     }
 
     /**
-     * Obtiene la etiqueta traducida para un campo bloqueado.
+     * Obtiene los tipos soportados y, opcionalmente, sus flags *_locked.
      *
-     * Aplica reglas específicas:
-     *  - Si el nombre termina en `types_id`, se etiqueta como "Type".
-     *  - Si termina en `models_id`, se etiqueta como "Model".
-     *  - Para otros campos conocidos (`serial`, `otherserial`, `manufacturers_id`, `states_id`)
-     *    usa etiquetas específicas en castellano.
+     * @param string|null $fields null para devolver itemtypes,
+     *                            'lockfields' para devolver filas completas.
      *
-     * @param string $field Nombre del campo (por ejemplo, 'serial', 'otherserial', 'states_id').
+     * @return array
+     */
+    public static function getSupportedAssetTypes($fields = null): array
+    {
+        global $DB;
+
+        self::syncSupportedAssetTypes();
+
+        $standardTypes = Config::lockAssetFieldType();
+        $customTypes = ConfigAssetObject::getAvailableCustomAssetItemtypes();
+
+        $allowedTypes = array_values(
+            array_unique(
+                array_merge(
+                    $standardTypes,
+                    $customTypes
+                )
+            )
+        );
+
+        $result = [];
+
+        $iterator = $DB->request([
+            'SELECT' => [
+                'id',
+                'itemtype',
+                'serial_locked',
+                'otherserial_locked',
+                'manufacturers_id_locked',
+                'models_id_locked',
+                'types_id_locked',
+            ],
+            'FROM'  => self::$table,
+            'ORDER' => 'id ASC',
+        ]);
+
+        foreach ($iterator as $row) {
+            $itemtype = (string) $row['itemtype'];
+
+            if (
+                !in_array($itemtype, $allowedTypes, true)
+                && !str_starts_with($itemtype, 'Glpi\\CustomAsset\\')
+            ) {
+                $DB->delete(
+                    self::$table,
+                    [
+                        'id' => $row['id'],
+                    ]
+                );
+                continue;
+            }
+
+            if ($fields === 'lockfields') {
+                $result[] = $row;
+            } else {
+                $result[] = $itemtype;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Devuelve la etiqueta traducida de un campo bloqueado.
      *
-     * @return string Etiqueta traducida del campo.
+     * @param string $field Nombre del campo.
+     *
+     * @return string
      */
     public static function getLockfieldFieldLabel($field): string
     {
         if (str_ends_with($field, 'types_id')) {
-            return __("Type");
+            return __('Type');
         }
-        if (str_ends_with($field, 'models_id')) {
 
-            return __("Model");
+        if (str_ends_with($field, 'models_id')) {
+            return __('Model');
         }
+
         $fields = [
-            'serial'            => __('Número de serie'),
-            'otherserial'       => __('Número de inventario'),
-            'manufacturers_id'  => __('Fabricantes'),
-            'states_id'         => __('Estado', 'glpi')
+            'serial'           => __('Número de serie'),
+            'otherserial'      => __('Número de inventario'),
+            'manufacturers_id' => __('Fabricantes'),
+            'states_id'        => __('Estado', 'glpi'),
         ];
-        return $fields[$field];
+
+        return $fields[$field] ?? $field;
     }
 
     /**
-     * Construye la matriz de tipos de activos y sus campos bloqueables.
+     * Devuelve la matriz de tipos de activos y campos bloqueables.
      *
-     * La estructura devuelta es del tipo:
-     *  - 'columns' → definición de cada columna (campo bloqueable).
-     *  - 'rows'    → para cada itemtype, indica:
-     *      - etiqueta del tipo de activo.
-     *      - qué columnas están marcadas (checked) y si son editables (readonly).
-     *
-     * Se utiliza principalmente en el formulario de configuración de bloqueo de campos.
-     *
-     * @return array Matriz con filas (itemtypes) y columnas (campos bloqueables).
+     * @return array<string, mixed>
      */
-    public static function getMatrixAssetFields()
+    public static function getMatrixAssetFields(): array
     {
-        global $DB;
-
         $matrix = [
-            'rows' => [],
+            'rows'    => [],
             'columns' => [
                 'serial_locked' => [
                     'label' => __('número de serie'),
-                    'title' => __('número de serie')
+                    'title' => __('número de serie'),
                 ],
                 'otherserial_locked' => [
                     'label' => __('número de inventario'),
-                    'title' => __('número de inventario')
+                    'title' => __('número de inventario'),
                 ],
                 'manufacturers_id_locked' => [
                     'label' => __('manufacturer'),
-                    'title' => __('manufacturer')
+                    'title' => __('manufacturer'),
                 ],
                 'models_id_locked' => [
                     'label' => __('modelo'),
-                    'title' => __('modelo')
+                    'title' => __('modelo'),
                 ],
                 'types_id_locked' => [
                     'label' => __('tipo'),
-                    'title' => __('tipo')
+                    'title' => __('tipo'),
                 ],
-            ]
-
+            ],
         ];
 
-        // Obtenemos los itemtype registrados en nuestra tabla con sus flags *_locked
-        $assettypes =  self::getSupportedAssetTypes('lockfields');
+        $assetTypes = self::getSupportedAssetTypes('lockfields');
 
-        foreach ($assettypes as $row) {
-            foreach ($row as $field => $val) {
-                if ($field === 'itemtype') {
-                    $itemtype = $val;
+        foreach ($assetTypes as $row) {
+            $itemtype = $row['itemtype'];
+            $subColumns = [];
 
-                    $itemtype_obj = new $itemtype();
-
-                    $itemtype_label = $itemtype_obj->getTypeName(1);
-                }
-                $sub_columns[$field] = [
-                    'checked'  => $val,
-                    'readonly' => !self::canUpdate()
-                ];
-                $matrix['rows'][$itemtype] = [
-                    'label'   => __($itemtype_label),
-                    'columns' => $sub_columns
+            foreach (array_keys($matrix['columns']) as $column) {
+                $subColumns[$column] = [
+                    'checked'  => (int) ($row[$column] ?? 0),
+                    'readonly' => !self::canUpdate(),
                 ];
             }
+
+            $matrix['rows'][$itemtype] = [
+                'label'   => self::getItemtypeLabel($itemtype),
+                'columns' => $subColumns,
+            ];
         }
 
         return $matrix;
     }
 
     /**
-     * Muestra el formulario de configuración de bloqueo de campos por tipo de activo.
+     * Muestra el formulario de configuración de campos bloqueados.
      *
-     * Uso:
-     *  - Obtiene la matriz de tipos de activo y campos bloqueables.
-     *  - Pinta texto introductorio explicando cómo marcar los campos.
-     *  - Renderiza una tabla de checkboxes mediante Html::showCheckboxMatrix(),
-     *    permitiendo al usuario indicar los campos que deben bloquearse.
-     *  - Incluye un botón "Save" si el usuario tiene derecho a actualizar.
-     *
-     * @return bool Siempre true tras renderizar el formulario.
+     * @return bool
      */
-    public static function showConfigFieldForm()
+    public static function showConfigFieldForm(): bool
     {
-
         $matrix = self::getMatrixAssetFields();
         $rows = $matrix['rows'];
         $columns = $matrix['columns'];
 
         echo '<table class="tab_cadre_fixe"><tbody>';
-        echo '<tr><th>' .  __('Configuración de bloqueo de campos de activos', 'lockassetfield') . '</th></tr>';
-        echo '<tr><td>' . __('Marque las casillas correspondientes para indicar qué campos deben permanecer bloqueados en los formularios de cada activo.', 'prestamo') . '</td></tr>';
+        echo '<tr><th>' . __('Configuración de bloqueo de campos de activos', 'lockassetfield') . '</th></tr>';
+        echo '<tr><td>' . __('Marque las casillas correspondientes para indicar qué campos deben permanecer bloqueados en los formularios de cada activo.', 'lockassetfield') . '</td></tr>';
         echo '</tbody></table>';
+
         echo '<div class="card">';
         echo '<div class="spaced p-3">';
         echo '<form method="post" action="' . self::getFormURL() . '">';
 
-        // Mostrar la matriz de checkboxes
         Html::showCheckboxMatrix(
             $columns,
             $rows,
             [
-                'title'           => __('Activos'),
-                'row_check_all'   => count($columns) > 1,
-                'col_check_all'   => count($rows) > 1,
+                'title'         => __('Activos'),
+                'row_check_all' => count($columns) > 1,
+                'col_check_all' => count($rows) > 1,
             ]
         );
 
         echo '<div class="d-flex justify-content-center gap-3 mt-3">';
         echo '<div class="w-auto">';
+
         if (self::canUpdate()) {
             echo '<button type="submit" name="update" value="' . __('Save') . '" class="ms-auto btn btn-primary">';
             echo '<i class="fas fa-save me-2"></i>' . __('Save');
             echo '</button>';
         }
+
         echo '</div>';
         echo '</div>';
 
         Html::closeForm();
-        echo "</div>";
-        echo "</div>";
+        echo '</div>';
+        echo '</div>';
+
+        return true;
     }
 
     /**
-     * Muestra el formulario de configuración de bloqueo por estados.
-     *
-     * Permite definir, para cada tipo de activo, en qué estados (`glpi_states`)
-     * debe bloquearse el campo `states_id`. Flujo:
-     *
-     *  - Obtiene los itemtypes registrados.
-     *  - Obtiene el listado de estados desde `glpi_states`.
-     *  - Para cada tipo de activo, muestra:
-     *      - Nombre del tipo.
-     *      - Dropdown múltiple con los estados seleccionables.
-     *  - Incluye botón "Save" si el usuario puede actualizar.
+     * Muestra el formulario de configuración de bloqueo por estado.
      *
      * @return void
      */
     public static function showConfigFieldStateForm(): void
     {
-        // Obtenemos los itemtypes
-        $fieldSatesTypes = self::getSupportedAssetTypes();
-
-        // Obtenemos los estados para el dropdown multiple
+        $fieldStatesTypes = self::getSupportedAssetTypes();
         $elements = self::getStates();
 
         echo '<table class="tab_cadre_fixe"><tbody>';
         echo '<tr><th>' . __('Configuración de bloqueo de campo cambio de estado', 'lockassetfield') . '</th></tr>';
-        echo '<tr><td>' . __('Seleccione en qué estados del dispositivo el campo Cambiar estado debe permanecer bloqueado.', 'prestamo') . '</td></tr>';
+        echo '<tr><td>' . __('Seleccione en qué estados del dispositivo el campo Cambiar estado debe permanecer bloqueado.', 'lockassetfield') . '</td></tr>';
         echo '</tbody></table>';
 
         echo '<div class="card">';
         echo '<div class="spaced p-3">';
         echo '<div class="field-container">';
         echo '<form method="post" action="' . self::getFormURL() . '">';
-        echo '<div class ="">';
         echo '<table class="tab_cadre_fixe">';
         echo '<thead>';
         echo '<tr>';
@@ -319,243 +367,234 @@ class ConfigField extends CommonDBTM
         echo '</thead>';
         echo '<tbody>';
 
-        foreach ($fieldSatesTypes as $fieldSatesType) {
-            // obtenemos el objeto
-            $configFieldSate = new self();
-            if (!$configFieldSate->getFromDBByCrit(['itemtype' => $fieldSatesType])) {
+        foreach ($fieldStatesTypes as $fieldStatesType) {
+            $configFieldState = new self();
+
+            if (!$configFieldState->getFromDBByCrit(['itemtype' => $fieldStatesType])) {
                 continue;
             }
-            // Obtenemos el objeto del itemtype
-            $itemtype = new $fieldSatesType();
 
-            $name_input_hidden = $fieldSatesType . '[id]';
-            $name_input_state = $fieldSatesType . '[state_ids]';
+            $nameInputHidden = $fieldStatesType . '[id]';
+            $nameInputState = $fieldStatesType . '[state_ids]';
 
-            echo '<input type="hidden" name="' . $name_input_hidden . '" value="' . $configFieldSate->fields['id'] . '" >';
+            echo '<input type="hidden" name="' . htmlspecialchars($nameInputHidden, ENT_QUOTES, 'UTF-8') . '" value="' . (int) $configFieldState->fields['id'] . '">';
             echo '<tr>';
-            // El nombre del itemtype
-            echo '<td class="tab_bg_1" style="width:40%">' . __($itemtype->getTypeName(1)) . '</td>';
-
-            // Dropdown múltiple de los estados de los activos
+            echo '<td class="tab_bg_1" style="width:40%">' . htmlspecialchars(self::getItemtypeLabel($fieldStatesType), ENT_QUOTES, 'UTF-8') . '</td>';
             echo '<td style="width:60%">';
-            Dropdown::showFromArray($name_input_state, $elements, [
-                'multiple'   => true, // Habilitar selección múltiple
-                'values'      => $configFieldSate->fields['state_ids'] !== null ? json_decode($configFieldSate->fields['state_ids']) : [],   // Valor preseleccionado (opcional)
-                'rand'       => mt_rand(), // ID único
-                'comments'   => __('Seleccione uno o varios estados'),
-                'display'    => true, // Hacerlo visible
-                'width'     => 'auto',
-                'required' => false,
-                'width' => '100%',
-                'readonly' => !self::canUpdate()
-            ]);
-            echo '</td>';
 
+            Dropdown::showFromArray(
+                $nameInputState,
+                $elements,
+                [
+                    'multiple' => true,
+                    'values'   => $configFieldState->fields['state_ids'] !== null
+                        ? json_decode($configFieldState->fields['state_ids'], true)
+                        : [],
+                    'rand'     => mt_rand(),
+                    'comments' => __('Seleccione uno o varios estados'),
+                    'display'  => true,
+                    'required' => false,
+                    'width'    => '100%',
+                    'readonly' => !self::canUpdate(),
+                ]
+            );
+
+            echo '</td>';
             echo '</tr>';
         }
 
         echo '</tbody>';
-        echo "</table>";
-        echo "</div>";
+        echo '</table>';
 
         echo '<div class="d-flex justify-content-center gap-3 mt-3">';
         echo '<div class="w-auto">';
+
         if (self::canUpdate()) {
             echo '<button type="submit" name="update_states" value="' . __('Save') . '" class="ms-auto btn btn-primary">';
             echo '<i class="fas fa-save me-2"></i>' . __('Save');
             echo '</button>';
         }
+
         echo '</div>';
         echo '</div>';
+
         Html::closeForm();
-        echo "</div>";
-        echo "</div>";
+        echo '</div>';
+        echo '</div>';
     }
 
     /**
-     * Obtiene los campos bloqueados para un tipo de item dado.
+     * Devuelve los campos bloqueados para un itemtype.
      *
-     * A partir de la fila de configuración en `glpi_plugin_lockassetfield_configfields`
-     * para el `itemtype`:
-     *  - Comprueba cada columna *_locked.
-     *  - Si está activa (valor 1), añade el nombre del campo correspondiente
-     *    a la lista resultante.
-     *  - Para `models_id_locked` y `types_id_locked`:
-     *      - Obtiene la clase de modelo/tipo asociada al itemtype.
-     *      - Calcula el nombre del campo *_id correspondiente a la tabla
-     *        de modelo/tipo sin el prefijo `glpi_`.
+     * @param string $itemtype Nombre de clase del item.
      *
-     * El resultado se utiliza en el hook `pre_item_update` para impedir cambios.
-     *
-     * @param string $itemtype Nombre de la clase del tipo de item (por ejemplo 'Computer').
-     *
-     * @return array Lista de nombres de campos que deben considerarse bloqueados.
+     * @return array<int, string>
      */
     public static function getLockedFieldsForItemType($itemtype): array
     {
         global $DB;
 
         $fields = [];
+
         $iterator = $DB->request([
-            'SELECT' => ['itemtype', 'serial_locked', 'otherserial_locked', 'manufacturers_id_locked', 'models_id_locked', 'types_id_locked'],
-            'FROM' => self::$table,
+            'SELECT' => [
+                'itemtype',
+                'serial_locked',
+                'otherserial_locked',
+                'manufacturers_id_locked',
+                'models_id_locked',
+                'types_id_locked',
+            ],
+            'FROM'  => self::$table,
             'WHERE' => [
                 'itemtype' => $itemtype,
-            ]
+            ],
         ]);
 
-
         foreach ($iterator as $row) {
-            foreach ($row as $col => $val)
-                if ($val === 1) {
-                    $field = str_replace('_locked', '', $col);
-                    if ($field === 'models_id') {
-                        // Obtenemos el objeto por itemtype
-                        $item = getItemForItemtype($itemtype);
-                        // Obtenemos la clase del model
-                        $model_class = $item->getModelClass();
-                         if($model_class !== null ){
-                             // obtenemos el nombre da la tabla de itemModel pero sin el sufijo glpi_
-                             $itemtype_column = str_replace('glpi_', '', getTableForItemType($model_class));
-                             $fields[] = $itemtype_column . '_id';
-                         }
-                    } elseif ($field === 'types_id') {
-                        // Obtenemos el objeto por itemtype
-                        $item = getItemForItemtype($itemtype);
-                        // Obtenemos la clase del type
-                        $type_class = $item->getTypeClass();
-                        if($type_class !== null ){
-                            // obtenemos el nombre da la tabla de itemTypes pero sin el sufijo glpi_
-                            $itemtype_column = str_replace('glpi_', '', getTableForItemType($type_class));
-                            $fields[] = $itemtype_column . '_id';
-                        }
-                    } else {
-                        $fields[] = $field;
-                    }
+            foreach ($row as $col => $val) {
+                if ($val !== 1 && $val !== '1') {
+                    continue;
                 }
+
+                $field = str_replace('_locked', '', $col);
+
+                if ($field === 'itemtype') {
+                    continue;
+                }
+
+                if ($field === 'models_id') {
+                    $item = getItemForItemtype($itemtype);
+
+                    if ($item !== false && method_exists($item, 'getModelClass')) {
+                        $modelClass = $item->getModelClass();
+
+                        if ($modelClass !== null && class_exists($modelClass)) {
+                            if (method_exists($modelClass, 'getForeignKeyField')) {
+                                $fields[] = $modelClass::getForeignKeyField();
+                            } else {
+                                $itemtypeColumn = str_replace('glpi_', '', getTableForItemType($modelClass));
+                                $fields[] = $itemtypeColumn . '_id';
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+
+                if ($field === 'types_id') {
+                    $item = getItemForItemtype($itemtype);
+
+                    if ($item !== false && method_exists($item, 'getTypeClass')) {
+                        $typeClass = $item->getTypeClass();
+
+                        if ($typeClass !== null && class_exists($typeClass)) {
+                            if (method_exists($typeClass, 'getForeignKeyField')) {
+                                $fields[] = $typeClass::getForeignKeyField();
+                            } else {
+                                $itemtypeColumn = str_replace('glpi_', '', getTableForItemType($typeClass));
+                                $fields[] = $itemtypeColumn . '_id';
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+
+                $fields[] = $field;
+            }
         }
 
-        return $fields;
+        return array_values(array_unique($fields));
     }
 
     /**
-     * Determina si el campo de estado (`states_id`) debe estar bloqueado
-     * para un `itemtype` y un estado concretos.
+     * Indica si el campo states_id debe bloquearse para un itemtype y estado.
      *
-     * Lógica:
-     *  - Lee la columna `state_ids` (JSON) para el `itemtype`.
-     *  - Si existe y es un array, comprueba si `$states_id` está en la lista.
-     *  - Si coincide, devuelve un array con `['states_id']` para indicar
-     *    que dicho campo debe tratarse como bloqueado.
-     *  - En caso contrario, devuelve false.
+     * @param string $itemtype Nombre del itemtype.
+     * @param int    $statesId ID del estado.
      *
-     * @param string $itemtype  Clase del tipo de item.
-     * @param int    $states_id ID del estado actual del item.
-     *
-     * @return array|bool Array con 'states_id' si está bloqueado, false en caso contrario.
+     * @return array|bool
      */
-    public static function isFieldStateLocked($itemtype, $states_id): array|bool
+    public static function isFieldStateLocked($itemtype, $statesId): array|bool
     {
         global $DB;
 
-        $fields = [];
+        $stateIds = [];
+
         $iterator = $DB->request([
             'SELECT' => ['state_ids'],
-            'FROM' => self::$table,
-            'WHERE' => [
-                'itemtype' => $itemtype
+            'FROM'   => self::$table,
+            'WHERE'  => [
+                'itemtype' => $itemtype,
             ],
-            'LIMIT' => 1
+            'LIMIT'  => 1,
         ]);
 
         foreach ($iterator as $row) {
             if (!empty($row['state_ids'])) {
-                // Decodificar JSON en array
                 $decoded = json_decode($row['state_ids'], true);
 
-                // Validar que sea realmente un array
                 if (is_array($decoded)) {
-                    $state_ids = $decoded;
+                    $stateIds = $decoded;
                 }
             }
         }
 
-        // Si sigue vacío, no hay estados bloqueados
-        if (empty($state_ids)) {
+        if (empty($stateIds)) {
             return false;
         }
 
-        // Ahora sí es seguro llamar a in_array()
-        return in_array($states_id, $state_ids) ? ['states_id'] : false;
+        return in_array((int) $statesId, array_map('intval', $stateIds), true)
+            ? ['states_id']
+            : false;
     }
 
     /**
-     * Obtiene los estados configurados en GLPI para usarlos en los dropdowns.
+     * Devuelve los estados de GLPI.
      *
-     * Lee la tabla `glpi_states` y devuelve un array asociativo:
-     *  - clave: ID del estado.
-     *  - valor: nombre del estado.
-     *
-     * Se utiliza en el formulario de bloqueo por estado.
-     *
-     * @return array Lista de estados indexada por id => name.
+     * @return array<int, string>
      */
     public static function getStates(): array
     {
         global $DB;
 
-        $glpi_states = $DB->request([
+        $elements = [];
+
+        $glpiStates = $DB->request([
             'SELECT' => ['id', 'name'],
             'FROM'   => 'glpi_states',
-            'ORDER'  => 'name'
+            'ORDER'  => 'name',
         ]);
 
-        if (count($glpi_states) > 0) {
-            // Creamos Array para los options de Dropdown multiple
-            foreach ($glpi_states as $data) {
-                $elements[$data["id"]] = $data["name"];
-            }
-        } else {
-            $elements = [];
+        foreach ($glpiStates as $data) {
+            $elements[(int) $data['id']] = $data['name'];
         }
+
         return $elements;
     }
 
     /**
-     * Comprueba si un itemtype está registrado en la tabla de configuración.
+     * Comprueba si un itemtype existe en la tabla de configuración.
      *
-     * Verifica si existe un registro en `glpi_plugin_lockassetfield_configfields`
-     * para el `itemtype` dado.
+     * @param string $itemtype Itemtype.
      *
-     * @param string $itemtype Nombre del itemtype.
-     *
-     * @return bool True si existe un registro, false en caso contrario.
+     * @return bool
      */
     public static function existInConfigField($itemtype): bool
     {
+        $configfield = new self();
 
-        $configfield = new self;
-
-        if (!$configfield->getFromDBByCrit(['itemtype' => $itemtype])) {
-            return false;
-        }
-        return true;
+        return $configfield->getFromDBByCrit(['itemtype' => $itemtype]);
     }
 
     /**
-     * Proceso de instalación de la tabla de configuración de campos.
-     *
-     * Acciones:
-     *  - Crea la tabla `glpi_plugin_lockassetfield_configfields` si no existe.
-     *  - Añade una fila por cada itemtype soportado (`Config::lockAssetFieldType()`),
-     *    siempre que la clase exista y no tenga ya registro.
+     * Instalación de la tabla de configuración de campos.
      *
      * @return void
      */
-    public static function install()
+    public static function install(): void
     {
-        /** @var DBmysql $DB */
-        /** @var array $GENINVENTORYNUMBER_TYPES */
         global $DB;
 
         $table = getTableForItemType(__CLASS__);
@@ -564,7 +603,7 @@ class ConfigField extends CommonDBTM
             $query = "CREATE TABLE IF NOT EXISTS `$table` (
                 `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `plugin_lockassetfield_configs_id` INT UNSIGNED NOT NULL DEFAULT 1,
-                `itemtype` VARCHAR(100) NOT NULL DEFAULT '',
+                `itemtype` VARCHAR(255) NOT NULL DEFAULT '',
                 `state_ids` LONGTEXT DEFAULT NULL,
                 `serial_locked` TINYINT UNSIGNED NOT NULL DEFAULT 0,
                 `otherserial_locked` TINYINT UNSIGNED NOT NULL DEFAULT 0,
@@ -580,28 +619,124 @@ class ConfigField extends CommonDBTM
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;";
 
             $DB->queryOrDie($query, $DB->error());
+        } else {
+            $query = "ALTER TABLE `$table` MODIFY `itemtype` VARCHAR(255) NOT NULL DEFAULT ''";
+            $DB->query($query);
         }
-        $field = new self();
 
-        $lockAssetFieldType = Config::lockAssetFieldType();
+        foreach (Config::lockAssetFieldType() as $type) {
+            if (!countElementsInTable($table, ['itemtype' => $type])) {
+                $field = new self();
+                $field->add([
+                    'plugin_lockassetfield_configs_id' => 1,
+                    'itemtype'                         => $type,
+                ]);
+            }
+        }
 
-        foreach ($lockAssetFieldType as $type) {
-            if (class_exists($type) && !countElementsInTable($table, ['itemtype' => $type])) {
-                $input['plugin_lockassetfield_configs_id']  = 1;
-                $input['itemtype']                          = $type;
-                $field->add($input);
+        self::syncSupportedAssetTypes();
+    }
+
+    /**
+     * Desinstala la tabla de configuración de campos.
+     *
+     * @return void
+     */
+    public static function uninstall(): void
+    {
+        global $DB;
+
+        $DB->dropTable(getTableForItemType(__CLASS__));
+    }
+
+    /**
+     * Migra itemtypes heredados de GenericObject a custom assets de GLPI 11.
+     *
+     * @return void
+     */
+    private static function migrateLegacyGenericObjectItemtypes(): void
+    {
+        global $DB;
+
+        $table = getTableForItemType(__CLASS__);
+
+        foreach (ConfigAssetObject::getCustomAssetDefinitions() as $definition) {
+            $systemName = $definition['system_name'];
+            $newItemtype = $definition['itemtype'];
+
+            if ($systemName === '' || $newItemtype === '') {
+                continue;
+            }
+
+            foreach (self::getLegacyGenericObjectItemtypesForSystemName($systemName) as $legacyItemtype) {
+                $legacy = new self();
+
+                if (!$legacy->getFromDBByCrit(['itemtype' => $legacyItemtype])) {
+                    continue;
+                }
+
+                if (countElementsInTable($table, ['itemtype' => $newItemtype])) {
+                    $DB->delete(
+                        $table,
+                        [
+                            'id' => $legacy->fields['id'],
+                        ]
+                    );
+
+                    continue;
+                }
+
+                $legacy->update([
+                    'id'       => $legacy->fields['id'],
+                    'itemtype' => $newItemtype,
+                ]);
             }
         }
     }
 
     /**
-     * Proceso de desinstalación: elimina la tabla de configuración de campos.
+     * Construye posibles itemtypes heredados de GenericObject a partir del system_name.
      *
-     * @return void
+     * @param string $systemName Nombre técnico del activo.
+     *
+     * @return array<int, string>
      */
-    public static function uninstall()
+    private static function getLegacyGenericObjectItemtypesForSystemName(string $systemName): array
     {
-        global $DB;
-        $DB->dropTable(getTableForItemType(__CLASS__));
+        $normalized = ucfirst($systemName);
+        $camelized = str_replace('_', '', ucwords($systemName, '_'));
+
+        return array_values(
+            array_unique([
+                'PluginGenericobject' . $normalized,
+                'PluginGenericobject' . $camelized,
+                $normalized,
+                $camelized,
+            ])
+        );
+    }
+
+    /**
+     * Devuelve la etiqueta visible de un itemtype.
+     *
+     * @param string $itemtype Itemtype.
+     *
+     * @return string
+     */
+    private static function getItemtypeLabel(string $itemtype): string
+    {
+        $customLabels = ConfigAssetObject::getCustomAssetLabels();
+
+        if (isset($customLabels[$itemtype])) {
+            return $customLabels[$itemtype];
+        }
+
+        if (class_exists($itemtype)) {
+            $item = new $itemtype();
+
+            return $item->getTypeName(1);
+        }
+
+        return $itemtype;
     }
 }

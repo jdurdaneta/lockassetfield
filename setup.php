@@ -30,12 +30,13 @@
 
 // Versión del plugin y rango de versiones de GLPI soportadas.
 define('PLUGIN_LOCKASSETFIELD_VERSION', '1.0.0');
-define('PLUGIN_LOCKASSETFIELD_MIN_GLPI', '10.0.0');
+define('PLUGIN_LOCKASSETFIELD_MIN_GLPI', '11.0.0');
 define('PLUGIN_LOCKASSETFIELD_MAX_GLPI', '11.0.99');
 
 use GlpiPlugin\Lockassetfield\Config;
 use GlpiPlugin\Lockassetfield\Profile;
 use GlpiPlugin\Lockassetfield\ConfigField;
+use GlpiPlugin\Lockassetfield\ConfigAssetObject;
 
 /**
  * Registra los hooks del plugin en GLPI.
@@ -66,6 +67,13 @@ function plugin_init_lockassetfield()
             'addtabon' => ['Profile'],
         ]);
 
+        // Registrar clases de configuración del plugin.
+        // ConfigField gestiona la matriz de campos bloqueables.
+        // ConfigAssetObject gestiona los activos personalizados de GLPI 11
+        // que antes provenían del plugin GenericObject.
+        \Plugin::registerClass(ConfigField::class);
+        \Plugin::registerClass(ConfigAssetObject::class);
+
         // Menú de configuración: accesible desde la sección de configuración de GLPI
         // según los derechos del usuario.
         if (Session::haveRight('config', UPDATE) || Session::haveRight(Config::$rightname, READ)) {
@@ -83,12 +91,14 @@ function plugin_init_lockassetfield()
             // Obtenemos los tipos de activos soportados desde la configuración.
             // Cada tipo de activo tendrá asociado el mismo callback de pre-actualización.
             $asset_types = ConfigField::getSupportedAssetTypes();
-            
+
             // Hook para interceptar ANTES de actualizar items (pre_item_update).
             // Construye un array con clave = tipo de activo y valor = función callback.
-            $preItemUpdate = array_fill_keys($asset_types, 'plugin_lockassetfield_pre_item_update');
-            $PLUGIN_HOOKS['pre_item_update']['lockassetfield'] = $preItemUpdate;
-            
+            if (!empty($asset_types)) {
+                $preItemUpdate = array_fill_keys($asset_types, 'plugin_lockassetfield_pre_item_update');
+                $PLUGIN_HOOKS['pre_item_update']['lockassetfield'] = $preItemUpdate;
+            }
+
             // Hook para modificar el formulario y hacer los campos de solo lectura
             // en la interfaz de edición de los activos soportados.
             $PLUGIN_HOOKS['post_show_item']['lockassetfield'] = 'plugin_lockassetfield_post_show_item';

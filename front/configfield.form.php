@@ -16,7 +16,7 @@
  *
  * LockAssetField is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -30,96 +30,93 @@
 
 use GlpiPlugin\Lockassetfield\Config;
 use GlpiPlugin\Lockassetfield\ConfigField;
+use GlpiPlugin\Lockassetfield\ConfigAssetObject;
 
 include('../../../inc/includes.php');
 
-// Comprobación de derechos: solo usuarios con permiso UPDATE sobre
-// el derecho principal del plugin pueden modificar la configuración de campos.
+global $CFG_GLPI;
+
+// Solo usuarios con permiso UPDATE sobre el plugin pueden modificar la configuración.
 Session::checkRight(Config::$rightname, UPDATE);
 
+/**
+ * Devuelve una etiqueta visible para un itemtype.
+ *
+ * - Para activos personalizados de GLPI 11 usa las etiquetas obtenidas desde
+ *   las Asset Definitions.
+ * - Para tipos estándar intenta usar getTypeName().
+ * - Si no puede resolverlo, devuelve el itemtype tal cual.
+ *
+ * @param string $itemtype Nombre del itemtype.
+ *
+ * @return string
+ */
+function plugin_lockassetfield_get_itemtype_label(string $itemtype): string
+{
+    $customLabels = ConfigAssetObject::getCustomAssetLabels();
+
+    if (isset($customLabels[$itemtype])) {
+        return $customLabels[$itemtype];
+    }
+
+    if (class_exists($itemtype)) {
+        $item = new $itemtype();
+
+        return $item->getTypeName(1);
+    }
+
+    return $itemtype;
+}
+
+/**
+ * Devuelve true si el itemtype forma parte de los soportados por el plugin.
+ *
+ * @param string $itemtype Nombre del itemtype.
+ *
+ * @return bool
+ */
+function plugin_lockassetfield_is_supported_itemtype(string $itemtype): bool
+{
+    return in_array($itemtype, ConfigField::getSupportedAssetTypes(), true);
+}
+
 // -------------------------------------------------------------------------
-// 1) Gestión de alta/baja de itemtypes de GenericObject (acción "add")
+// 1) Actualización de flags de bloqueo de campos (acción "update")
 // -------------------------------------------------------------------------
-if (isset($_POST['add'])) {
-
-    global $DB;
-
-    $configfield = new ConfigField();
-
-    // Recorremos todos los datos POST enviados desde la matriz de checkboxes
-    foreach ($_POST as $itemtype => $check_value) {
-
-        // Ignorar campos auxiliares de formulario que no son itemtypes
-        if ($itemtype === 'add' || $itemtype === '_glpi_csrf_token') {
+if (isset($_POST['update'])) {
+    foreach ($_POST as $fieldItemtype => $fields) {
+        // Ignorar botones, token y cualquier elemento que no sea un array de configuración
+        if (
+            !is_array($fields)
+            || $fieldItemtype === 'update'
+            || $fieldItemtype === '_glpi_csrf_token'
+        ) {
             continue;
         }
 
-        // Instanciamos la clase del itemtype para obtener su etiqueta
-        $object = new $itemtype();
-
-        if ($check_value['is_exist'] === "1") {
-            // Si el tipo de GenericObject está marcado y aún no existe en ConfigField,
-            // lo insertamos en la tabla de configuración.
-            if (!ConfigField::existInConfigField($itemtype)) {
-                $configfield->add(['itemtype' => $itemtype]);
-                Session::addMessageAfterRedirect(
-                    __('<strong>' . __($object->getTypeName(1)) . '</strong> - Se ha añadido a Bloqueo de Campos', 'lockassetfield'),
-                    false,
-                    INFO,
-                );
-            }
-        } else {
-            // Si está desmarcado y existe en ConfigField, lo eliminamos de la configuración.
-            if ($configfield->getFromDBByCrit(['itemtype' => $itemtype])) {
-                $configfield->delete(['id' => $configfield->fields['id']]);
-                Session::addMessageAfterRedirect(
-                    __('<strong>' . __($object->getTypeName(1)) . '</strong> - Se ha eliminado de Bloqueo de Campos', 'lockassetfield'),
-                    false,
-                    WARNING
-                );
-            }
-        }
-    }
-
-    // Volver a la página anterior (pestaña de configuración) tras procesar la acción.
-    Html::back();
-
-// -------------------------------------------------------------------------
-// 2) Actualización de flags de bloqueo de campos (acción "update")
-// -------------------------------------------------------------------------
-} elseif (isset($_POST['update'])) {
-    global $DB;
-
-    // Cada entrada del POST representa un itemtype con sus flags de campos bloqueados
-    foreach ($_POST as $fielditemtype => $fields) {
-        // Ignorar campos que no son configuraciones (botones, token, etc.)
-        if (!is_array($fields) || $fielditemtype === 'update' || $fielditemtype === '_glpi_csrf_token') {
+        if (!plugin_lockassetfield_is_supported_itemtype($fieldItemtype)) {
             continue;
         }
 
         $configfield = new ConfigField();
-        // Obtenemos el registro de configuración para ese itemtype
-        $configfield->getFromDBByCrit(['itemtype' => $fielditemtype]);
 
-        // Obtenemos el objeto del itemtype para construir mensajes amigables
-        $itemtype = new $fielditemtype();
+        if (!$configfield->getFromDBByCrit(['itemtype' => $fieldItemtype])) {
+            continue;
+        }
 
-        // Añadimos el id del registro a actualizar al array de campos
         $fields['id'] = $configfield->fields['id'];
+        $itemtypeLabel = plugin_lockassetfield_get_itemtype_label($fieldItemtype);
 
-        // Intentamos guardar la actualización en la base de datos
         if (!$configfield->update($fields)) {
-
             Session::addMessageAfterRedirect(
-                __('<strong>' . __($itemtype->getTypeName(1)) . '</strong> - Error en la actualización', 'lockassetfield'),
+                '<strong>' . $itemtypeLabel . '</strong> - ' . __('Error en la actualización', 'lockassetfield'),
                 false,
                 ERROR
             );
         } else {
-            // Solo mostramos mensaje de éxito si realmente hubo cambios registrados
             if (count($configfield->updates) > 0) {
                 Session::addMessageAfterRedirect(
-                    __('<strong>' . __($itemtype->getTypeName(1)) . '</strong> - Campos actualizados', 'lockassetfield'),
+                    '<strong>' . $itemtypeLabel . '</strong> - ' . __('Campos actualizados', 'lockassetfield'),
                     false,
                     INFO
                 );
@@ -127,49 +124,50 @@ if (isset($_POST['add'])) {
         }
     }
 
-    // Volvemos a la página anterior tras procesar la actualización de campos
     Html::back();
 
 // -------------------------------------------------------------------------
-// 3) Actualización de estados bloqueados para el campo states_id (acción "update_states")
+// 2) Actualización de estados bloqueados para el campo states_id
 // -------------------------------------------------------------------------
 } elseif (isset($_POST['update_states'])) {
-     global $DB;
-    
     $configfield = new ConfigField();
 
-    // Cada entrada del POST incluye datos para un determinado itemtype
-    foreach ($_POST as $fieldSatesTypes => $fields) {
-        $form_data = [];
-
-        // Ignorar campos que no son configuraciones
-        if (!is_array($fields) || $fieldSatesTypes === 'update' || $fieldSatesTypes === '_glpi_csrf_token') {
+    foreach ($_POST as $fieldStatesType => $fields) {
+        if (
+            !is_array($fields)
+            || $fieldStatesType === 'update_states'
+            || $fieldStatesType === '_glpi_csrf_token'
+        ) {
             continue;
         }
-        
-        // Construimos la estructura de datos a actualizar:
-        //  - id: el registro de configuración existente.
-        //  - state_ids: lista de estados (JSON) o null si no se seleccionó nada.
-        $form_data = [
+
+        if (!plugin_lockassetfield_is_supported_itemtype($fieldStatesType)) {
+            continue;
+        }
+
+        if (empty($fields['id'])) {
+            continue;
+        }
+
+        $formData = [
             'id'        => $fields['id'],
-            'state_ids' => isset($fields['state_ids']) ? json_encode(array_map('intval', $fields['state_ids'])) : NULL
+            'state_ids' => isset($fields['state_ids'])
+                ? json_encode(array_map('intval', $fields['state_ids']))
+                : null,
         ];
-        
-        // Obtenemos el objeto del itemtype para mensajes de feedback
-        $itemtype = new $fieldSatesTypes();
-        
-        // Actualizamos los estados bloqueados para el itemtype
-        if (!$configfield->update($form_data)) {           
-            
+
+        $itemtypeLabel = plugin_lockassetfield_get_itemtype_label($fieldStatesType);
+
+        if (!$configfield->update($formData)) {
             Session::addMessageAfterRedirect(
-                __('<strong>' . _-($itemtype->getTypeName(1)) . '</strong> - Error en la actualización', 'lockassetfield'),
+                '<strong>' . $itemtypeLabel . '</strong> - ' . __('Error en la actualización', 'lockassetfield'),
                 false,
                 ERROR
             );
         } else {
             if (count($configfield->updates) > 0) {
                 Session::addMessageAfterRedirect(
-                    __('<strong>' . __($itemtype->getTypeName(1)) . '</strong> - Campos actualizados', 'lockassetfield'),
+                    '<strong>' . $itemtypeLabel . '</strong> - ' . __('Campos actualizados', 'lockassetfield'),
                     true,
                     INFO
                 );
@@ -177,17 +175,20 @@ if (isset($_POST['add'])) {
         }
     }
 
-    // Volver a la página anterior tras procesar la actualización de estados
     Html::back();
 
 // -------------------------------------------------------------------------
-// 4) Caso por defecto: acceso sin acción válida → redirección
+// 3) Actualización de activos personalizados disponibles para el bloqueo
+// -------------------------------------------------------------------------
+} elseif (isset($_POST['update_asset_objects'])) {
+    ConfigAssetObject::saveSelectionFromPost($_POST);
+
+    Html::back();
+
+// -------------------------------------------------------------------------
+// 4) Caso por defecto: acceso sin acción válida
 // -------------------------------------------------------------------------
 } else {
-
-    // Si no se recibe ninguna acción esperada, redirigimos a la página de configuración principal.
     Html::redirect($CFG_GLPI['root_doc'] . '/plugins/lockassetfield/front/config.php');
-
-    // Llamada a footer (aunque tras redirect normalmente no se ejecuta).
     Html::footer();
 }
