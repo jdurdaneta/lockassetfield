@@ -73,7 +73,12 @@ final class Profile extends CommonDBTM
             && $item->getField('id') && $item->fields['interface'] != 'helpdesk'
         ) {
             // La etiqueta de la pestaña usa el nombre del tipo de configuración del plugin.
-            return self::createTabEntry(Config::getTypeName());
+            return self::createTabEntry(
+                Config::getTypeName(),
+                0,
+                Config::class,
+                Config::getIcon()
+            );
         }
         return '';
     }
