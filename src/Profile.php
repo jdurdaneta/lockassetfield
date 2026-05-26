@@ -187,12 +187,8 @@ final class Profile extends CommonDBTM
      */
     public static function uninstall()
     {
-        global $DB;
-
-        // Borra los registros de derechos del plugin en glpi_profilerights.
-        $query = "DELETE
-                  FROM `glpi_profilerights`
-                  WHERE `name` LIKE 'plugin_lockassetfield_%'";
-        $DB->queryOrDie($query, $DB->error());
+        foreach (self::getAllRights() as $right) {
+            \ProfileRight::deleteProfileRights([$right['field']]);
+        }
     }
 }

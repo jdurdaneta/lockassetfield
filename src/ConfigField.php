@@ -90,9 +90,13 @@ class ConfigField extends CommonDBTM
     {
         global $DB;
 
-        self::migrateLegacyGenericObjectItemtypes();
-
         $table = getTableForItemType(__CLASS__);
+
+        if (!$DB->tableExists($table)) {
+            return;
+        }
+
+        self::migrateLegacyGenericObjectItemtypes();
 
         $standardTypes = Config::lockAssetFieldType();
         $customTypes = ConfigAssetObject::getAvailableCustomAssetItemtypes();
@@ -167,6 +171,10 @@ class ConfigField extends CommonDBTM
         );
 
         $result = [];
+
+        if (!$DB->tableExists(self::$table)) {
+            return $result;
+        }
 
         $iterator = $DB->request([
             'SELECT' => [
@@ -436,6 +444,10 @@ class ConfigField extends CommonDBTM
 
         $fields = [];
 
+        if (!$DB->tableExists(self::$table)) {
+            return $fields;
+        }
+
         $iterator = $DB->request([
             'SELECT' => [
                 'itemtype',
@@ -522,6 +534,10 @@ class ConfigField extends CommonDBTM
 
         $stateIds = [];
 
+        if (!$DB->tableExists(self::$table)) {
+            return false;
+        }
+
         $iterator = $DB->request([
             'SELECT' => ['state_ids'],
             'FROM'   => self::$table,
@@ -583,6 +599,12 @@ class ConfigField extends CommonDBTM
      */
     public static function existInConfigField($itemtype): bool
     {
+        global $DB;
+
+        if (!$DB->tableExists(self::$table)) {
+            return false;
+        }
+
         $configfield = new self();
 
         return $configfield->getFromDBByCrit(['itemtype' => $itemtype]);
@@ -618,10 +640,10 @@ class ConfigField extends CommonDBTM
                 KEY `date_mod` (`date_mod`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;";
 
-            $DB->queryOrDie($query, $DB->error());
+            $DB->doQuery($query);
         } else {
             $query = "ALTER TABLE `$table` MODIFY `itemtype` VARCHAR(255) NOT NULL DEFAULT ''";
-            $DB->query($query);
+            $DB->doQuery($query);
         }
 
         foreach (Config::lockAssetFieldType() as $type) {
@@ -646,7 +668,11 @@ class ConfigField extends CommonDBTM
     {
         global $DB;
 
-        $DB->dropTable(getTableForItemType(__CLASS__));
+        $table = getTableForItemType(__CLASS__);
+
+        if ($DB->tableExists($table)) {
+            $DB->dropTable($table);
+        }
     }
 
     /**
@@ -659,6 +685,10 @@ class ConfigField extends CommonDBTM
         global $DB;
 
         $table = getTableForItemType(__CLASS__);
+
+        if (!$DB->tableExists($table)) {
+            return;
+        }
 
         foreach (ConfigAssetObject::getCustomAssetDefinitions() as $definition) {
             $systemName = $definition['system_name'];

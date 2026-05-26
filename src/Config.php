@@ -335,7 +335,7 @@ class Config extends CommonDBTM
                 PRIMARY KEY (`id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;";
 
-            $DB->queryOrDie($query, $DB->error());
+            $DB->doQuery($query);
 
             $config = new self();
             $config->add([
@@ -356,7 +356,11 @@ class Config extends CommonDBTM
     {
         global $DB;
 
-        $DB->dropTable(getTableForItemType(__CLASS__));
+        $table = getTableForItemType(__CLASS__);
+
+        if ($DB->tableExists($table)) {
+            $DB->dropTable($table);
+        }
     }
 
     /**
@@ -366,8 +370,17 @@ class Config extends CommonDBTM
      */
     public static function isLockAssetFieldActive(): bool
     {
+        global $DB;
+
+        if (!$DB->tableExists(getTableForItemType(__CLASS__))) {
+            return false;
+        }
+
         $config = new self();
-        $config->getFromDB(1);
+
+        if (!$config->getFromDB(1)) {
+            return false;
+        }
 
         return (bool) ($config->fields['is_active'] ?? false);
     }
