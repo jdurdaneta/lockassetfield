@@ -33,6 +33,7 @@ namespace GlpiPlugin\Lockassetfield;
 use CommonDBTM;
 use CommonGLPI;
 use Glpi\Application\View\TemplateRenderer;
+use Glpi\Asset\AssetDefinition;
 
 if (!defined('GLPI_ROOT')) {
     die("Sorry. You can't access this file directly");
@@ -152,10 +153,10 @@ class Config extends CommonDBTM
         if (get_class($item) === __CLASS__) {
             $tabs = [];
 
-            $tabs[0] = __('General setup');
-            $tabs[1] = __(ConfigField::getTypeName(), 'lockassetfield');
-            $tabs[2] = __('Cambio de estado', 'lockassetfield');
-            $tabs[3] = __(ConfigAssetObject::getTypeName(), 'lockassetfield');
+            $tabs[0] = self::createTabEntry(__('General setup'), 0, null, 'ti ti-settings');
+            $tabs[1] = ConfigField::createTabEntry(ConfigField::getTypeName(), 0, null, 'ti ti-lock');
+            $tabs[2] = \State::createTabEntry(__('Cambio de estado', 'lockassetfield'));
+            $tabs[3] = AssetDefinition::createTabEntry(ConfigAssetObject::getTypeName(2));
 
             return $tabs;
         }
@@ -308,7 +309,7 @@ class Config extends CommonDBTM
 
                 Además, el plugin permite configurar bloqueos basados en el estado del activo. Si un activo se encuentra en uno de los estados seleccionados, su campo <strong>Estado</strong> quedará protegido contra cambios.<br><br>
 
-                En GLPI 11, los activos personalizados definidos mediante <strong>Definiciones de activos</strong> pueden añadirse desde la pestaña <strong>Gestión de objetos</strong>, sustituyendo la antigua integración con GenericObject.<br><br>
+                En GLPI 11, los activos personalizados definidos mediante <strong>Definiciones de activos</strong> pueden añadirse desde la pestaña <strong>Definición de activos</strong>, sustituyendo la antigua integración con GenericObject.<br><br>
 
                 Utilice esta configuración para adaptar el control de edición de activos según las necesidades de su organización.";
     }

@@ -51,7 +51,7 @@ if (!defined('GLPI_ROOT')) {
  *
  * Responsabilidades:
  *  - Obtener los activos personalizados activos definidos en GLPI.
- *  - Mostrar la pantalla "Gestión de objetos".
+ *  - Mostrar la pantalla "Definición de activos".
  *  - Permitir activar/desactivar qué activos personalizados estarán
  *    disponibles para el bloqueo de campos.
  *  - Guardar la selección en la tabla de configuración de campos.
@@ -74,7 +74,7 @@ class ConfigAssetObject extends CommonDBTM
      */
     public static function getTypeName($nb = 0): string
     {
-        return __('Gestión de objetos', 'lockassetfield');
+        return __('Definición de activos', 'lockassetfield');
     }
 
     /**
@@ -163,7 +163,7 @@ class ConfigAssetObject extends CommonDBTM
         $labels = [];
 
         foreach (self::getCustomAssetDefinitions() as $definition) {
-            $labels[$definition['itemtype']] = $definition['label'];
+            $labels[$definition['itemtype']] = self::formatDisplayLabel($definition['label']);
         }
 
         return $labels;
@@ -196,7 +196,7 @@ class ConfigAssetObject extends CommonDBTM
             $itemtype = $definition['itemtype'];
 
             $matrix['rows'][$itemtype] = [
-                'label'   => $definition['label'],
+                'label'   => self::formatDisplayLabel($definition['label']),
                 'checked' => ConfigField::existInConfigField($itemtype),
             ];
         }
@@ -215,6 +215,12 @@ class ConfigAssetObject extends CommonDBTM
 
         $matrix = self::getMatrixAssetFields();
 
+        echo '<style>
+            .lockassetfield-asset-definition-table tbody tr:hover td {
+                background-color: var(--tblr-gray-100);
+            }
+        </style>';
+
         echo '<table class="tab_cadre_fixe"><tbody>';
         echo '<tr><th>' . __('Añadir activos personalizados', 'lockassetfield') . '</th></tr>';
         echo '<tr><td>' . __('Seleccione los activos personalizados que desea hacer disponibles para el bloqueo de campos.', 'lockassetfield') . '</td></tr>';
@@ -226,18 +232,18 @@ class ConfigAssetObject extends CommonDBTM
         echo '<form method="post" action="' . $CFG_GLPI['root_doc'] . '/plugins/lockassetfield/front/configfield.form.php">';
         Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]);
 
-        echo '<table class="tab_cadre_fixe">';
+        echo '<table class="tab_cadre_fixe lockassetfield-asset-definition-table">';
         echo '<thead>';
         echo '<tr>';
-        echo '<th>' . __('Modelos', 'lockassetfield') . '</th>';
-        echo '<th class="center">' . __('Activo', 'lockassetfield') . '</th>';
+        echo '<th style="border-bottom: 1px solid var(--tblr-border-color); padding: 0.75rem;">' . __('Modelos', 'lockassetfield') . '</th>';
+        echo '<th class="center" style="border-bottom: 1px solid var(--tblr-border-color); padding: 0.75rem;">' . __('Activo', 'lockassetfield') . '</th>';
         echo '</tr>';
         echo '</thead>';
         echo '<tbody>';
 
         if (empty($matrix['rows'])) {
             echo '<tr>';
-            echo '<td colspan="2" class="center">';
+            echo '<td colspan="2" class="center" style="border-bottom: 1px solid var(--tblr-border-color); padding: 0.75rem;">';
             echo __('No hay activos personalizados activos definidos en GLPI.', 'lockassetfield');
             echo '</td>';
             echo '</tr>';
@@ -247,14 +253,11 @@ class ConfigAssetObject extends CommonDBTM
             $checkboxId = 'lockassetfield_asset_object_' . md5($itemtype);
 
             echo '<tr>';
-            echo '<td>';
+            echo '<td style="border-bottom: 1px solid var(--tblr-border-color); padding: 0.75rem;">';
             echo htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8');
-            echo '<br><small class="text-muted">';
-            echo htmlspecialchars($itemtype, ENT_QUOTES, 'UTF-8');
-            echo '</small>';
             echo '</td>';
 
-            echo '<td class="center">';
+            echo '<td class="center" style="border-bottom: 1px solid var(--tblr-border-color); padding: 0.75rem;">';
             echo '<input type="checkbox"'
                 . ' id="' . $checkboxId . '"'
                 . ' name="custom_asset_itemtypes[]"'
@@ -431,5 +434,26 @@ class ConfigAssetObject extends CommonDBTM
         }
 
         return $definition->getAssetClassName();
+    }
+
+    /**
+     * Formatea una etiqueta para mostrarla con la primera letra en mayúscula.
+     *
+     * @param string $label Etiqueta original.
+     *
+     * @return string
+     */
+    private static function formatDisplayLabel(string $label): string
+    {
+        $label = trim($label);
+
+        if ($label === '') {
+            return $label;
+        }
+
+        $first = mb_strtoupper(mb_substr($label, 0, 1, 'UTF-8'), 'UTF-8');
+        $rest  = mb_substr($label, 1, null, 'UTF-8');
+
+        return $first . $rest;
     }
 }
