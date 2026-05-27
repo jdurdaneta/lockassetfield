@@ -33,6 +33,7 @@ define('PLUGIN_LOCKASSETFIELD_VERSION', '1.0.0');
 define('PLUGIN_LOCKASSETFIELD_MIN_GLPI', '11.0.0');
 define('PLUGIN_LOCKASSETFIELD_MAX_GLPI', '11.0.99');
 
+use Glpi\Asset\AssetDefinition;
 use GlpiPlugin\Lockassetfield\Config;
 use GlpiPlugin\Lockassetfield\Profile;
 use GlpiPlugin\Lockassetfield\ConfigField;
@@ -73,6 +74,20 @@ function plugin_init_lockassetfield()
         // que antes provenían del plugin GenericObject.
         \Plugin::registerClass(ConfigField::class);
         \Plugin::registerClass(ConfigAssetObject::class);
+
+        // Hook para limpiar la configuración del plugin cuando se elimina
+        // o se purga una definición de activo personalizada de GLPI 11.
+        //
+        // Se registra siempre que el plugin esté activo, aunque la funcionalidad
+        // de bloqueo esté desactivada, para evitar dejar registros huérfanos en
+        // glpi_plugin_lockassetfield_configfields.
+        if (class_exists(AssetDefinition::class)) {
+            $PLUGIN_HOOKS['pre_item_delete']['lockassetfield'][AssetDefinition::class]
+                = 'plugin_lockassetfield_pre_asset_definition_delete';
+
+            $PLUGIN_HOOKS['pre_item_purge']['lockassetfield'][AssetDefinition::class]
+                = 'plugin_lockassetfield_pre_asset_definition_delete';
+        }
 
         // Menú de configuración: accesible desde la sección de configuración de GLPI
         // según los derechos del usuario.

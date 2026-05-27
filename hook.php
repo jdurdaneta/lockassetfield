@@ -1,5 +1,6 @@
 <?php
 
+use Glpi\Asset\AssetDefinition;
 use GlpiPlugin\Lockassetfield\Config;
 use GlpiPlugin\Lockassetfield\ConfigField;
 use GlpiPlugin\Lockassetfield\Profile;
@@ -56,6 +57,111 @@ function plugin_lockassetfield_uninstall(): bool
     );
 
     return true;
+}
+
+/**
+ * Hook previo al borrado o purgado de una definición de activo.
+ *
+ * Limpia la configuración del plugin para evitar que un Asset Definition
+ * eliminado siga apareciendo como Glpi\CustomAsset\... en las pestañas:
+ * - Bloqueo de campos
+ * - Cambio de estado
+ *
+ * @param \CommonDBTM $item Item eliminado o purgado.
+ *
+ * @return bool
+ */
+function plugin_lockassetfield_pre_asset_definition_delete($item): bool
+{
+    if (!$item instanceof AssetDefinition) {
+        return true;
+    }
+
+    plugin_lockassetfield_delete_config_for_asset_definition($item);
+
+    return true;
+}
+
+/**
+ * Elimina de glpi_plugin_lockassetfield_configfields la configuración asociada
+ * a una definición de activo personalizada.
+ *
+ * @param AssetDefinition $definition Definición de activo.
+ *
+ * @return void
+ */
+function plugin_lockassetfield_delete_config_for_asset_definition(AssetDefinition $definition): void
+{
+    global $DB;
+
+    $table = getTableForItemType(ConfigField::class);
+
+    if (!$DB->tableExists($table)) {
+        return;
+    }
+
+    $itemtypes = plugin_lockassetfield_get_asset_definition_itemtype_candidates($definition);
+
+    foreach ($itemtypes as $itemtype) {
+        $DB->delete(
+            $table,
+            [
+                'itemtype' => $itemtype,
+            ]
+        );
+    }
+}
+
+/**
+ * Devuelve posibles itemtypes asociados a una definición de activo.
+ *
+ * Se usan varios candidatos para cubrir diferencias de mayúsculas/minúsculas
+ * o de generación del nombre de clase:
+ * - Glpi\CustomAsset\proyectorAsset
+ * - Glpi\CustomAsset\ProyectorAsset
+ * - Glpi\CustomAsset\proyector_assetAsset
+ * - Glpi\CustomAsset\ProyectorAsset
+ *
+ * @param AssetDefinition $definition Definición de activo.
+ *
+ * @return array<int, string>
+ */
+function plugin_lockassetfield_get_asset_definition_itemtype_candidates(AssetDefinition $definition): array
+{
+    $itemtypes = [];
+
+    if (method_exists($definition, 'getAssetClassName')) {
+        $assetClassName = $definition->getAssetClassName();
+
+        if (!empty($assetClassName)) {
+            $itemtypes[] = (string) $assetClassName;
+        }
+    }
+
+    $names = [];
+
+    foreach (['system_name', 'name'] as $field) {
+        if (!empty($definition->fields[$field])) {
+            $names[] = (string) $definition->fields[$field];
+        }
+    }
+
+    foreach ($names as $name) {
+        $name = trim($name);
+
+        if ($name === '') {
+            continue;
+        }
+
+        $camelized = str_replace('_', '', ucwords($name, '_'));
+
+        $itemtypes[] = 'Glpi\\CustomAsset\\' . $name . 'Asset';
+        $itemtypes[] = 'Glpi\\CustomAsset\\' . ucfirst($name) . 'Asset';
+        $itemtypes[] = 'Glpi\\CustomAsset\\' . lcfirst($camelized) . 'Asset';
+        $itemtypes[] = 'Glpi\\CustomAsset\\' . $camelized . 'Asset';
+    }
+
+    return array_values(array_unique($itemtypes));
 }
 
 /**

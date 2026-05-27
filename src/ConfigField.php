@@ -289,7 +289,9 @@ class ConfigField extends CommonDBTM
                 ];
             }
 
-            $matrix['rows'][$itemtype] = [
+            $rowKey = self::getMatrixRowKey($itemtype);
+
+            $matrix['rows'][$rowKey] = [
                 'label'   => self::getItemtypeLabel($itemtype),
                 'columns' => $subColumns,
             ];
@@ -758,15 +760,72 @@ class ConfigField extends CommonDBTM
         $customLabels = ConfigAssetObject::getCustomAssetLabels();
 
         if (isset($customLabels[$itemtype])) {
-            return $customLabels[$itemtype];
+            return self::formatDisplayLabel($customLabels[$itemtype]);
         }
 
         if (class_exists($itemtype)) {
             $item = new $itemtype();
 
-            return $item->getTypeName(1);
+            return self::formatDisplayLabel($item->getTypeName(1));
+        }
+
+        return self::formatDisplayLabel($itemtype);
+    }
+
+    /**
+     * Devuelve una clave segura para usar como índice de fila en showCheckboxMatrix().
+     *
+     * Los itemtypes de Asset Definitions contienen barras invertidas
+     * como Glpi\CustomAsset\proyectorAsset. Estas claves pueden interferir
+     * con el JavaScript interno de Html::showCheckboxMatrix().
+     *
+     * @param string $itemtype Itemtype real.
+     *
+     * @return string Clave segura.
+     */
+    private static function getMatrixRowKey(string $itemtype): string
+    {
+        if (str_starts_with($itemtype, 'Glpi\\CustomAsset\\')) {
+            return 'lockassetfield_customasset_' . md5($itemtype);
         }
 
         return $itemtype;
+    }
+
+    /**
+     * Devuelve un mapa entre claves seguras de matriz e itemtypes reales.
+     *
+     * @return array<string, string>
+     */
+    public static function getMatrixRowKeyToItemtypeMap(): array
+    {
+        $map = [];
+
+        foreach (ConfigAssetObject::getAvailableCustomAssetItemtypes() as $itemtype) {
+            $map[self::getMatrixRowKey($itemtype)] = $itemtype;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Formatea una etiqueta para mostrarla con la primera letra en mayúscula.
+     *
+     * @param string $label Etiqueta original.
+     *
+     * @return string
+     */
+    private static function formatDisplayLabel(string $label): string
+    {
+        $label = trim($label);
+
+        if ($label === '') {
+            return $label;
+        }
+
+        $first = mb_strtoupper(mb_substr($label, 0, 1, 'UTF-8'), 'UTF-8');
+        $rest  = mb_substr($label, 1, null, 'UTF-8');
+
+        return $first . $rest;
     }
 }

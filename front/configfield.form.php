@@ -84,6 +84,8 @@ function plugin_lockassetfield_is_supported_itemtype(string $itemtype): bool
 // 1) Actualización de flags de bloqueo de campos (acción "update")
 // -------------------------------------------------------------------------
 if (isset($_POST['update'])) {
+    $matrixRowKeyMap = ConfigField::getMatrixRowKeyToItemtypeMap();
+
     foreach ($_POST as $fieldItemtype => $fields) {
         // Ignorar botones, token y cualquier elemento que no sea un array de configuración
         if (
@@ -92,6 +94,12 @@ if (isset($_POST['update'])) {
             || $fieldItemtype === '_glpi_csrf_token'
         ) {
             continue;
+        }
+
+        // Si la matriz usó una clave segura para un Asset Definition,
+        // la convertimos de nuevo al itemtype real antes de validar y guardar.
+        if (isset($matrixRowKeyMap[$fieldItemtype])) {
+            $fieldItemtype = $matrixRowKeyMap[$fieldItemtype];
         }
 
         if (!plugin_lockassetfield_is_supported_itemtype($fieldItemtype)) {
