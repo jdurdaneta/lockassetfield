@@ -414,17 +414,17 @@ class ConfigField extends CommonDBTM
                         $item = getItemForItemtype($itemtype);
                         // Obtenemos la clase del model
                         $model_class = $item->getModelClass();
-                         if($model_class !== null ){
-                             // obtenemos el nombre da la tabla de itemModel pero sin el sufijo glpi_
-                             $itemtype_column = str_replace('glpi_', '', getTableForItemType($model_class));
-                             $fields[] = $itemtype_column . '_id';
-                         }
+                        if ($model_class !== null) {
+                            // obtenemos el nombre da la tabla de itemModel pero sin el sufijo glpi_
+                            $itemtype_column = str_replace('glpi_', '', getTableForItemType($model_class));
+                            $fields[] = $itemtype_column . '_id';
+                        }
                     } elseif ($field === 'types_id') {
                         // Obtenemos el objeto por itemtype
                         $item = getItemForItemtype($itemtype);
                         // Obtenemos la clase del type
                         $type_class = $item->getTypeClass();
-                        if($type_class !== null ){
+                        if ($type_class !== null) {
                             // obtenemos el nombre da la tabla de itemTypes pero sin el sufijo glpi_
                             $itemtype_column = str_replace('glpi_', '', getTableForItemType($type_class));
                             $fields[] = $itemtype_column . '_id';
@@ -564,7 +564,7 @@ class ConfigField extends CommonDBTM
             $query = "CREATE TABLE IF NOT EXISTS `$table` (
                 `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `plugin_lockassetfield_configs_id` INT UNSIGNED NOT NULL DEFAULT 1,
-                `itemtype` VARCHAR(100) NOT NULL DEFAULT '',
+                `itemtype` VARCHAR(255) NOT NULL DEFAULT '',
                 `state_ids` LONGTEXT DEFAULT NULL,
                 `serial_locked` TINYINT UNSIGNED NOT NULL DEFAULT 0,
                 `otherserial_locked` TINYINT UNSIGNED NOT NULL DEFAULT 0,
@@ -579,8 +579,12 @@ class ConfigField extends CommonDBTM
                 KEY `date_mod` (`date_mod`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;";
 
-            $DB->queryOrDie($query, $DB->error());
+            $DB->doQuery($query);
+        } else {
+            $query = "ALTER TABLE `$table` MODIFY `itemtype` VARCHAR(255) NOT NULL DEFAULT ''";
+            $DB->doQuery($query);
         }
+
         $field = new self();
 
         $lockAssetFieldType = Config::lockAssetFieldType();

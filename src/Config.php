@@ -30,11 +30,12 @@
 
 namespace GlpiPlugin\Lockassetfield;
 
-use Plugin;
 use CommonDBTM;
 use CommonGLPI;
-use GlpiPlugin\Lockassetfield\ConfigField;
 use Glpi\Application\View\TemplateRenderer;
+use Glpi\Asset\AssetDefinition;
+use GlpiPlugin\Lockassetfield\ConfigField;
+use Plugin;
 
 if (!defined('GLPI_ROOT')) {
     die("Sorry. You can't access this file directly");
@@ -166,7 +167,7 @@ class Config extends CommonDBTM
             $array_ret[0] = self::createTabEntry(__('General setup'), 0, null, 'ti ti-settings');
             $array_ret[1] = ConfigField::createTabEntry(ConfigField::getTypeName(), 0, null, 'ti ti-lock');
             $array_ret[2] = \State::createTabEntry(__('Cambio de estado', 'lockassetfield'));
-            // $array_ret[3] = AssetDefinition::createTabEntry(ConfigAssetObject::getTypeName(2));
+            $array_ret[3] = AssetDefinition::createTabEntry(AssetDefinition::getTypeName(2));
 
             return $array_ret;
         }
@@ -209,10 +210,7 @@ class Config extends CommonDBTM
                 break;
 
             case 3:
-                // Configuración para objetos genéricos (si el plugin genericobject está activo).
-                if (Plugin::isPluginActive('genericobject')) {
-                    ConfigGenricObject::showConfigFieldForm();
-                }
+                ConfigAssetDefinition::showConfigFieldForm();
                 break;
         }
 
