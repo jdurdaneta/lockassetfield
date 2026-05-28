@@ -138,6 +138,7 @@ class Config extends CommonDBTM
         $ong = [];
         $this->addStandardTab(__CLASS__, $ong, $options);
         $this->addStandardTab(ConfigField::class, $ong, $options);
+        // $this->addStandardTab(ConfigAssetObject::class, $ong, $options);
         $this->addStandardTab('Log', $ong, $options);
 
         return $ong;
@@ -161,19 +162,14 @@ class Config extends CommonDBTM
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
     {
         if (get_class($item) == __CLASS__) {
-            $array_ret    = [];
-            $array_ret[0] = __('General setup');
-            $array_ret[1] = __(ConfigField::getTypeName(), 'lockassetfield');
-            $array_ret[2] = __('Cambio de estado', 'lockassetfield');
-
-            // Pestaña adicional para integración con GenericObject, si está activo.
-            if (Plugin::isPluginActive('genericobject')) {
-                $array_ret[3] = __(ConfigGenricObject::getTypeName(), 'lockassetfield');
-            }
+            $array_ret = [];
+            $array_ret[0] = self::createTabEntry(__('General setup'), 0, null, 'ti ti-settings');
+            $array_ret[1] = ConfigField::createTabEntry(ConfigField::getTypeName(), 0, null, 'ti ti-lock');
+            $array_ret[2] = \State::createTabEntry(__('Cambio de estado', 'lockassetfield'));
+            // $array_ret[3] = AssetDefinition::createTabEntry(ConfigAssetObject::getTypeName(2));
 
             return $array_ret;
         }
-
         return '';
     }
 
@@ -400,15 +396,15 @@ class Config extends CommonDBTM
                 PRIMARY KEY (`id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;";
 
-            $DB->queryOrDie($query, $DB->error());
+            $DB->doQuery($query);
 
-            // Registro inicial de configuración del plugin.
-            $tmp['id']        = 1;
-            $tmp['name']      = 'Bloqueo de campos';
-            $tmp['is_active'] = 1;
-            $tmp['comment']   = '';
-            $config           = new self();
-            $config->add($tmp);
+            $config = new self();
+            $config->add([
+                'id'        => 1,
+                'name'      => 'Bloqueo de campos',
+                'is_active' => 1,
+                'comment'   => '',
+            ]);
         }
     }
 
