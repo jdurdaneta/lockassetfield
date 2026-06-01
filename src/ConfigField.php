@@ -89,10 +89,11 @@ class ConfigField extends CommonDBTM
      * se elimina su registro de la tabla de configuración.
      *
      * @param string|null $fields Modo de retorno: null (solo itemtypes) o 'lockfields'.
+     * @param bool $clean_if_not_exists Si es true, elimina los itemtypes que no existen ni en GLPI ni en la configuración del plugin.
      *
      * @return array Lista de itemtypes o filas completas según el modo.
      */
-    public static function getSupportedAssetTypes($fields = null)
+    public static function getSupportedAssetTypes($fields = null, $clean_if_not_exists = false): array
     {
         global $DB;
 
@@ -106,7 +107,7 @@ class ConfigField extends CommonDBTM
         foreach ($iterator as $row) {
             if (!class_exists($row['itemtype'])) {
                 // Verificamos si no es un activo nativo de GLPI; si no lo es, lo eliminamos de nuestra tabla
-                if (!in_array($row['itemtype'], Config::lockAssetFieldType())) {
+                if (!in_array($row['itemtype'], Config::lockAssetFieldType()) && $clean_if_not_exists) {
                     $DB->delete(
                         self::$table,
                         ['itemtype' => $row['itemtype']]
@@ -199,7 +200,7 @@ class ConfigField extends CommonDBTM
         ];
 
         // Obtenemos los itemtype registrados en nuestra tabla con sus flags *_locked
-        $assettypes =  self::getSupportedAssetTypes('lockfields');
+        $assettypes =  self::getSupportedAssetTypes('lockfields', true);
 
         foreach ($assettypes as $row) {
             foreach ($row as $field => $val) {
@@ -295,7 +296,7 @@ class ConfigField extends CommonDBTM
     public static function showConfigFieldStateForm(): void
     {
         // Obtenemos los itemtypes
-        $fieldSatesTypes = self::getSupportedAssetTypes();
+        $fieldSatesTypes = self::getSupportedAssetTypes('lockstates', true);
 
         // Obtenemos los estados para el dropdown multiple
         $elements = self::getStates();
