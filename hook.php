@@ -81,6 +81,8 @@ function plugin_lockassetfield_uninstall()
 {
     global $DB;
 
+    $migration = new Migration(PLUGIN_LOCKASSETFIELD_VERSION);
+
     // Tablas propias del plugin que se eliminarán de la base de datos.
     $tables = [
         'glpi_plugin_lockassetfield_configs',
@@ -88,8 +90,9 @@ function plugin_lockassetfield_uninstall()
     ];
 
     foreach ($tables as $table) {
-        $query = "DROP TABLE IF EXISTS `{$table}`";
-        $DB->query($query) or die($DB->error());
+        if ($DB->tableExists($table)) {
+            $migration->dropTable($table);
+        }
     }
 
     // Elimina la configuración y derechos definidos en Profile.
@@ -99,19 +102,16 @@ function plugin_lockassetfield_uninstall()
     foreach (Profile::getAllRights() as $right) {
         ProfileRight::deleteProfileRights([$right['field']]);
     }
+  
+    // Limpieza de logs del plugin
+    $DB->delete(
+        'glpi_logs',
+        [
+            'itemtype' => Config::class,
+        ]
+    );
 
-    $itemtype = addslashes(Config::class);
-
-    // Tablas para eliminar registros relacionados.
-    $relatedTables = [
-        'glpi_logs'
-    ];
-
-    // Eliminar registros relacionados con el tipo de item del plugin (limpieza de históricos).
-    foreach ($relatedTables as $table) {
-        $query = "DELETE FROM `$table` WHERE `itemtype` = '$itemtype'";
-        $DB->queryOrDie($query, $DB->error());
-    }
+    $migration->executeMigration();
 
     return true;
 }
