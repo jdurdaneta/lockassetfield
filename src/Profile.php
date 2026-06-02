@@ -73,7 +73,13 @@ final class Profile extends CommonDBTM
             && $item->getField('id') && $item->fields['interface'] != 'helpdesk'
         ) {
             // La etiqueta de la pestaña usa el nombre del tipo de configuración del plugin.
-            return self::createTabEntry(Config::getTypeName());
+            // La etiqueta de la pestaña usa el nombre del tipo de configuración del plugin.
+            return self::createTabEntry(
+                Config::getTypeName(),
+                0,
+                Config::class,
+                Config::getIcon()
+            );
         }
         return '';
     }
@@ -185,9 +191,11 @@ final class Profile extends CommonDBTM
         global $DB;
 
         // Borra los registros de derechos del plugin en glpi_profilerights.
-        $query = "DELETE
-                  FROM `glpi_profilerights`
-                  WHERE `name` LIKE 'plugin_lockassetfield_%'";
-        $DB->queryOrDie($query, $DB->error());
+        $DB->delete(
+            'glpi_profilerights',
+            [
+                'name' => ['LIKE', 'plugin_lockassetfield_%']
+            ]
+        );
     }
 }

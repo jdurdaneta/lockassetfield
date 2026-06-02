@@ -184,7 +184,7 @@ if (isset($_POST['add'])) {
 // 4) Caso por defecto: acceso sin acción válida → redirección
 // -------------------------------------------------------------------------
 } else {
-
+    global $CFG_GLPI;
     // Si no se recibe ninguna acción esperada, redirigimos a la página de configuración principal.
     Html::redirect($CFG_GLPI['root_doc'] . '/plugins/lockassetfield/front/config.php');
 

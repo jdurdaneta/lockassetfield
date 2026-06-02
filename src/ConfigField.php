@@ -89,10 +89,11 @@ class ConfigField extends CommonDBTM
      * se elimina su registro de la tabla de configuración.
      *
      * @param string|null $fields Modo de retorno: null (solo itemtypes) o 'lockfields'.
+     * @param bool $clean_if_not_exists Si es true, elimina los itemtypes que no existen ni en GLPI ni en la configuración del plugin.
      *
      * @return array Lista de itemtypes o filas completas según el modo.
      */
-    public static function getSupportedAssetTypes($fields = null)
+    public static function getSupportedAssetTypes($fields = null, $clean_if_not_exists = false): array
     {
         global $DB;
 
@@ -106,7 +107,7 @@ class ConfigField extends CommonDBTM
         foreach ($iterator as $row) {
             if (!class_exists($row['itemtype'])) {
                 // Verificamos si no es un activo nativo de GLPI; si no lo es, lo eliminamos de nuestra tabla
-                if (!in_array($row['itemtype'], Config::lockAssetFieldType())) {
+                if (!in_array($row['itemtype'], Config::lockAssetFieldType()) && $clean_if_not_exists) {
                     $DB->delete(
                         self::$table,
                         ['itemtype' => $row['itemtype']]
@@ -199,7 +200,7 @@ class ConfigField extends CommonDBTM
         ];
 
         // Obtenemos los itemtype registrados en nuestra tabla con sus flags *_locked
-        $assettypes =  self::getSupportedAssetTypes('lockfields');
+        $assettypes =  self::getSupportedAssetTypes('lockfields', true);
 
         foreach ($assettypes as $row) {
             foreach ($row as $field => $val) {
@@ -215,7 +216,7 @@ class ConfigField extends CommonDBTM
                     'readonly' => !self::canUpdate()
                 ];
                 $matrix['rows'][$itemtype] = [
-                    'label'   => __($itemtype_label),
+                    'label'   => __(ucfirst($itemtype_label)),
                     'columns' => $sub_columns
                 ];
             }
@@ -295,7 +296,7 @@ class ConfigField extends CommonDBTM
     public static function showConfigFieldStateForm(): void
     {
         // Obtenemos los itemtypes
-        $fieldSatesTypes = self::getSupportedAssetTypes();
+        $fieldSatesTypes = self::getSupportedAssetTypes('lockstates', true);
 
         // Obtenemos los estados para el dropdown multiple
         $elements = self::getStates();
@@ -334,7 +335,7 @@ class ConfigField extends CommonDBTM
             echo '<input type="hidden" name="' . $name_input_hidden . '" value="' . $configFieldSate->fields['id'] . '" >';
             echo '<tr>';
             // El nombre del itemtype
-            echo '<td class="tab_bg_1" style="width:40%">' . __($itemtype->getTypeName(1)) . '</td>';
+            echo '<td class="tab_bg_1" style="width:40%">' . __(ucfirst($itemtype->getTypeName(1))) . '</td>';
 
             // Dropdown múltiple de los estados de los activos
             echo '<td style="width:60%">';
@@ -414,17 +415,17 @@ class ConfigField extends CommonDBTM
                         $item = getItemForItemtype($itemtype);
                         // Obtenemos la clase del model
                         $model_class = $item->getModelClass();
-                         if($model_class !== null ){
-                             // obtenemos el nombre da la tabla de itemModel pero sin el sufijo glpi_
-                             $itemtype_column = str_replace('glpi_', '', getTableForItemType($model_class));
-                             $fields[] = $itemtype_column . '_id';
-                         }
+                        if ($model_class !== null) {
+                            // obtenemos el nombre da la tabla de itemModel pero sin el sufijo glpi_
+                            $itemtype_column = str_replace('glpi_', '', getTableForItemType($model_class));
+                            $fields[] = $itemtype_column . '_id';
+                        }
                     } elseif ($field === 'types_id') {
                         // Obtenemos el objeto por itemtype
                         $item = getItemForItemtype($itemtype);
                         // Obtenemos la clase del type
                         $type_class = $item->getTypeClass();
-                        if($type_class !== null ){
+                        if ($type_class !== null) {
                             // obtenemos el nombre da la tabla de itemTypes pero sin el sufijo glpi_
                             $itemtype_column = str_replace('glpi_', '', getTableForItemType($type_class));
                             $fields[] = $itemtype_column . '_id';
@@ -564,7 +565,7 @@ class ConfigField extends CommonDBTM
             $query = "CREATE TABLE IF NOT EXISTS `$table` (
                 `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `plugin_lockassetfield_configs_id` INT UNSIGNED NOT NULL DEFAULT 1,
-                `itemtype` VARCHAR(100) NOT NULL DEFAULT '',
+                `itemtype` VARCHAR(255) NOT NULL DEFAULT '',
                 `state_ids` LONGTEXT DEFAULT NULL,
                 `serial_locked` TINYINT UNSIGNED NOT NULL DEFAULT 0,
                 `otherserial_locked` TINYINT UNSIGNED NOT NULL DEFAULT 0,
@@ -579,8 +580,12 @@ class ConfigField extends CommonDBTM
                 KEY `date_mod` (`date_mod`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;";
 
-            $DB->queryOrDie($query, $DB->error());
+            $DB->doQuery($query);
+        } else {
+            $query = "ALTER TABLE `$table` MODIFY `itemtype` VARCHAR(255) NOT NULL DEFAULT ''";
+            $DB->doQuery($query);
         }
+
         $field = new self();
 
         $lockAssetFieldType = Config::lockAssetFieldType();

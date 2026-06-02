@@ -32,6 +32,7 @@ use GlpiPlugin\Lockassetfield\Config;
 use GlpiPlugin\Lockassetfield\Profile;
 use GlpiPlugin\Lockassetfield\ConfigField;
 
+
 /**
  * Proceso de instalación del plugin.
  *
@@ -48,9 +49,9 @@ function plugin_lockassetfield_install(): bool
 
     // Verificar la versión de GLPI instalada frente a la versión mínima requerida.
     $glpiVersion = GLPI_VERSION;
-    if (version_compare($glpiVersion, '10.0.0', '<')) {
-        Session::addMessageAfterRedirect(
-            __('This plugin requires GLPI >= 10.0.0', 'lockassetfield'),
+    if (version_compare($glpiVersion, '11.0.0', '<')) {
+        \Session::addMessageAfterRedirect(
+            __('This plugin requires GLPI >= 11.0.0', 'lockassetfield'),
             false,
             ERROR
         );
@@ -81,6 +82,8 @@ function plugin_lockassetfield_uninstall()
 {
     global $DB;
 
+    $migration = new Migration(PLUGIN_LOCKASSETFIELD_VERSION);
+
     // Tablas propias del plugin que se eliminarán de la base de datos.
     $tables = [
         'glpi_plugin_lockassetfield_configs',
@@ -88,8 +91,9 @@ function plugin_lockassetfield_uninstall()
     ];
 
     foreach ($tables as $table) {
-        $query = "DROP TABLE IF EXISTS `{$table}`";
-        $DB->query($query) or die($DB->error());
+        if ($DB->tableExists($table)) {
+            $migration->dropTable($table);
+        }
     }
 
     // Elimina la configuración y derechos definidos en Profile.
@@ -97,21 +101,18 @@ function plugin_lockassetfield_uninstall()
 
     // Quita los derechos del perfil actual registrados para este plugin.
     foreach (Profile::getAllRights() as $right) {
-        ProfileRight::deleteProfileRights([$right['field']]);
+        \ProfileRight::deleteProfileRights([$right['field']]);
     }
+  
+    // Limpieza de logs del plugin
+    $DB->delete(
+        'glpi_logs',
+        [
+            'itemtype' => Config::class,
+        ]
+    );
 
-    $itemtype = addslashes(Config::class);
-
-    // Tablas para eliminar registros relacionados.
-    $relatedTables = [
-        'glpi_logs'
-    ];
-
-    // Eliminar registros relacionados con el tipo de item del plugin (limpieza de históricos).
-    foreach ($relatedTables as $table) {
-        $query = "DELETE FROM `$table` WHERE `itemtype` = '$itemtype'";
-        $DB->queryOrDie($query, $DB->error());
-    }
+    $migration->executeMigration();
 
     return true;
 }
@@ -137,7 +138,7 @@ function plugin_lockassetfield_uninstall()
 function plugin_lockassetfield_pre_item_update($item)
 {
     // Verificar si el usuario tiene permisos para editar (super-admin o derecho específico del plugin).
-    if (Session::haveRight('config', UPDATE) || Session::haveRight(Config::$rightname, Config::RIGHT_UPDATE_FIELDS)) {
+    if (\Session::haveRight('config', UPDATE) || \Session::haveRight(Config::$rightname, Config::RIGHT_UPDATE_FIELDS)) {
         return true;
     }
 
@@ -181,7 +182,7 @@ function plugin_lockassetfield_pre_item_update($item)
 
                 // Etiqueta amigable del campo para mostrar en el mensaje de advertencia.
                 $field_label = ConfigField::getLockfieldFieldLabel($field);
-                Session::addMessageAfterRedirect(
+                \Session::addMessageAfterRedirect(
                     sprintf(
                         __('El campo "%s" no puede ser modificado', 'lockassetfield'),
                         $field_label
@@ -232,7 +233,7 @@ function plugin_lockassetfield_post_show_item($params)
     }
 
     // Verificar si el usuario tiene permisos para editar (super-admin o derecho específico del plugin).
-    if (Session::haveRight('config', UPDATE) || Session::haveRight(Config::$rightname, Config::RIGHT_UPDATE_FIELDS)) {
+    if (\Session::haveRight('config', UPDATE) || \Session::haveRight(Config::$rightname, Config::RIGHT_UPDATE_FIELDS)) {
         return true;
     }
 

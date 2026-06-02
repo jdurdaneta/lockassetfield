@@ -48,6 +48,7 @@ if (isset($_POST['update'])) {
     Html::back();
 
 } else {
+    global $CFG_GLPI;
     // Si no llega una acción válida, redirige al archivo de configuración principal.
     Html::redirect($CFG_GLPI['root_doc'] . '/plugins/lockassetfield/front/config.php');
 }
