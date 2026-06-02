@@ -31,6 +31,7 @@
 use GlpiPlugin\Lockassetfield\Config;
 use GlpiPlugin\Lockassetfield\Profile;
 use GlpiPlugin\Lockassetfield\ConfigField;
+use Session;
 
 /**
  * Proceso de instalación del plugin.
@@ -48,9 +49,9 @@ function plugin_lockassetfield_install(): bool
 
     // Verificar la versión de GLPI instalada frente a la versión mínima requerida.
     $glpiVersion = GLPI_VERSION;
-    if (version_compare($glpiVersion, '10.0.0', '<')) {
+    if (version_compare($glpiVersion, '11.0.0', '<')) {
         Session::addMessageAfterRedirect(
-            __('This plugin requires GLPI >= 10.0.0', 'lockassetfield'),
+            __('This plugin requires GLPI >= 11.0.0', 'lockassetfield'),
             false,
             ERROR
         );
