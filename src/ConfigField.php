@@ -216,7 +216,7 @@ class ConfigField extends CommonDBTM
                     'readonly' => !self::canUpdate()
                 ];
                 $matrix['rows'][$itemtype] = [
-                    'label'   => __($itemtype_label),
+                    'label'   => __(ucfirst($itemtype_label)),
                     'columns' => $sub_columns
                 ];
             }
@@ -335,7 +335,7 @@ class ConfigField extends CommonDBTM
             echo '<input type="hidden" name="' . $name_input_hidden . '" value="' . $configFieldSate->fields['id'] . '" >';
             echo '<tr>';
             // El nombre del itemtype
-            echo '<td class="tab_bg_1" style="width:40%">' . __($itemtype->getTypeName(1)) . '</td>';
+            echo '<td class="tab_bg_1" style="width:40%">' . __(ucfirst($itemtype->getTypeName(1))) . '</td>';
 
             // Dropdown múltiple de los estados de los activos
             echo '<td style="width:60%">';
